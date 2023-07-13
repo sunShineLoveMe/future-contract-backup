@@ -2,13 +2,19 @@ const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
 const mysql = require('mysql');
+const { 
+        CONNECTED_HOST, 
+        CONNECTED_USER, 
+        CONNECTED_PASSWORD, 
+        CONNECTED_DATABASE 
+    } = require('./config/index.js');
 
 // MySQL 配置
 const connection = mysql.createConnection({
-    host: '127.0.0.1',
-    user: 'root',
-    password: '123456',
-    database: 'contract_data'
+    host: CONNECTED_HOST,
+    user: CONNECTED_USER,
+    password: CONNECTED_PASSWORD,
+    database: CONNECTED_DATABASE
 });
 
 const directoryPath = path.resolve(__dirname, './contractData');
