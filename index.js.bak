@@ -1,0 +1,105 @@
+const fs = require('fs')
+const path = require('path')
+const csv = require('csv-parser')
+const mysql = require('mysql')
+
+// MySQL 配置
+const connection = mysql.createConnection({
+    host: '127.0.0.1',
+    user: 'root',
+    password: '123456',
+    database: 'contract_data'
+});
+
+// 本地项目文件夹路径
+const folderPath = path.resolve(__dirname, './contractData')
+
+// 目录表名
+const menuTableName = 'menu';
+
+// 数据表名
+const stockTableName = 'stocks';
+
+// 创建目录表
+connection.query(`
+  CREATE TABLE IF NOT EXISTS ${menuTableName} (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    parent_id INT(11),
+    status INT(11) NOT NULL DEFAULT 1,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    FOREIGN KEY (parent_id) REFERENCES ${menuTableName}(id)
+  )
+`, err => {
+    if (err) throw err;
+
+    console.log(`Table '${menuTableName}' created`);
+});
+
+// 创建数据表
+connection.query(`
+  CREATE TABLE IF NOT EXISTS ${stockTableName} (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    menu_id INT(11) NOT NULL,
+    date DATE NOT NULL,
+    open FLOAT NOT NULL,
+    high FLOAT NOT NULL,
+    low FLOAT NOT NULL,
+    close FLOAT NOT NULL,
+    volume INT(11) NOT NULL,
+    money BIGINT(20) NOT NULL,
+    open_interest INT(11) NOT NULL,
+    PRIMARY KEY (id),
+    FOREIGN KEY (menu_id) REFERENCES ${menuTableName}(id)
+  )
+`, err => {
+    if (err) throw err;
+
+    console.log(`Table '${stockTableName}' created`);
+});
+
+// 递归函数，用于获取制定文件夹中的所有CSV文
+function readCSVs(folderPath, parentId) {
+    // 获取文件夹中的所有文件夹和文件
+    fs.readdir(folderPath, (err, files) => {
+        if (err) throw err;
+        // 遍历文件夹中的所有文件和文件夹
+        files.forEach(file => {
+            // 获取文件或文件夹的绝对路径
+            const filePath = path.join(folderPath, file)
+            // 判断是否为文件夹
+            if (fs.statSync(filePath).isDirectory()) {
+                // 如果是文件夹，则将该目录信息插入到目录表中，并递归调用 readCSVs 函数
+                connection.query(`
+        INSERT INTO ${menuTableName} (name, parent_id)
+        VALUES (?, ?)
+      `, [file, parentId], (err, result) => {
+                    if (err) throw err;
+
+                    const directoryId = result.insertId;
+                    readCSVs(filePath, directoryId);
+                });
+            } else if (path.extname(filePath) === '.csv') {
+                // 如果是 CSV 文件，则读取该文件，并将数据插入到数据表中
+                fs.createReadStream(filePath)
+                    .pipe(csv())
+                    .on('data', row => {
+                        connection.query(`
+            INSERT INTO ${stockTableName} (menu_id, date, open, high, low, close, volume, money, open_interest)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [parentId, row.date, row.open, row.high, row.low, row.close, row.volume, row.money, row.open_interest], err => {
+                            if (err) throw err;
+                        });
+                    })
+                    .on('end', () => {
+                        console.log(`Finished reading ${filePath}`);
+                    });
+            }
+        })
+    })
+}
+
+// 调用 readCSVs 函数，开始读取 CSV 文件
+readCSVs(folderPath, null);
+
