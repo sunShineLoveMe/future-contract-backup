@@ -1,0 +1,16 @@
+{
+  "name": "future-contract-backup",
+  "version": "1.0.0",
+  "description": "期货合约数据平台",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "june",
+  "license": "ISC",
+  "dependencies": {
+    "csv-parser": "^3.0.0",
+    "mysql": "^2.18.1",
+    "node-xlsx": "^0.23.0"
+  }
+}
