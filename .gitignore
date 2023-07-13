@@ -1,2 +1,3 @@
-node_modules
-contractData
+# dependencies
+/node_modules
+/contractData
