@@ -38,7 +38,7 @@ function readDirectory(directoryPath, parentId) {
 
         // 将菜单项添加到 menu 表中，并获取其自动生成的 ID
         connection.query(
-          'INSERT INTO menu (name, parent_id, status) VALUES (?, ?, ?)',
+          'INSERT INTO menu (code, parent_id, status) VALUES (?, ?, ?)',
           [menuName, parentId, 'active'],
           (err, result) => {
             if (err) {
@@ -56,7 +56,7 @@ function readDirectory(directoryPath, parentId) {
         // 如果是 CSV 文件，则将其数据添加到 stock 表中
         const stockName = path.basename(filePath, '.csv');
         connection.query(
-          'INSERT INTO menu (name, parent_id, status) VALUES (?, ?, ?)',
+          'INSERT INTO menu (code, parent_id, status) VALUES (?, ?, ?)',
           [stockName, parentId, 'active'],
           (err, result) => {
             if (err) {
@@ -101,7 +101,7 @@ connection.connect(err => {
 
   // 建立 menu 表
   connection.query(
-    'CREATE TABLE IF NOT EXISTS menu (id INT NOT NULL AUTO_INCREMENT, name VARCHAR(255), parent_id INT, status VARCHAR(255), create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id), FOREIGN KEY (parent_id) REFERENCES menu(id))',
+    'CREATE TABLE IF NOT EXISTS menu (id INT NOT NULL AUTO_INCREMENT, code VARCHAR(255), parent_id INT, status VARCHAR(255), create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id), FOREIGN KEY (parent_id) REFERENCES menu(id))',
     err => {
       if (err) {
         console.error(err);
