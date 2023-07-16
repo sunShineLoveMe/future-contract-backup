@@ -30,7 +30,7 @@ function readDirectory(directoryPath, parentId) {
     }
 
     // 遍历所有文件和子目录
-    files.forEach(file => {
+    const promises = files.map(file => {
       const filePath = path.join(directoryPath, file);
 
       // 如果是子目录，则将其作为菜单项添加到 menu 表中
@@ -41,55 +41,69 @@ function readDirectory(directoryPath, parentId) {
         const productInfo = futureExchangeProducts.find(item => item.code === menuCode);
         const menuName = productInfo ? productInfo.name : '';
         // 将菜单项添加到 menu 表中，并获取其自动生成的 ID
-        connection.query(
-          'INSERT INTO menu (code, name, parent_id, status) VALUES (?, ?, ?, ?)',
-          [menuCode, menuName, parentId, 'active'],
-          (err, result) => {
-            if (err) {
-              console.error(err);
-              return;
+        return new Promise((resolve, reject) => {
+          connection.query(
+            'INSERT INTO menu (code, name, parent_id, status) VALUES (?, ?, ?, ?)',
+            [menuCode, menuName, parentId, 'active'],
+            (err, result) => {
+              if (err) {
+                console.error(err);
+                reject(err);
+                return;
+              }
+
+              menuId = result.insertId;
+
+              // 递归调用 readDirectory 函数，以处理子目录
+              readDirectory(filePath, menuId);
+
+              resolve();
             }
-
-            menuId = result.insertId;
-
-            // 递归调用 readDirectory 函数，以处理子目录
-            readDirectory(filePath, menuId);
-          }
-        );
+          );
+        });
       } else if (path.extname(filePath) === '.csv') {
         // 如果是 CSV 文件，则将其数据添加到 stock 表中
         const stockName = path.basename(filePath, '.csv');
-        connection.query(
-          'INSERT INTO menu (code, name, parent_id, status) VALUES (?, ?, ?, ?)',
-          [stockName, stockName, parentId, 'active'],
-          (err, result) => {
-            if (err) {
-              console.error(err);
-              return;
-            }
+        return new Promise((resolve, reject) => {
+          connection.query(
+            'INSERT INTO menu (code, name, parent_id, status) VALUES (?, ?, ?, ?)',
+            [stockName, stockName, parentId, 'active'],
+            (err, result) => {
+              if (err) {
+                console.error(err);
+                reject(err);
+                return;
+              }
 
-            const stockId = result.insertId;
+              const stockId = result.insertId;
 
-            fs.createReadStream(filePath)
-              .pipe(csv())
-              .on('data', row => {
-                connection.query(
-                  'INSERT INTO stock (menu_id, date, open, high, low, close, volume, money, open_interest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                  [stockId, row.date, row.open, row.high, row.low, row.close, row.volume, row.money, row.open_interest],
-                  err => {
-                    if (err) {
-                      console.error(err);
-                      return;
+              fs.createReadStream(filePath)
+                .pipe(csv())
+                .on('data', row => {
+                  connection.query(
+                    'INSERT INTO stock (menu_id, date, open, high, low, close, volume, money, open_interest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [stockId, row.date, row.open, row.high, row.low, row.close, row.volume, row.money, row.open_interest],
+                    err => {
+                      if (err) {
+                        console.error(err);
+                        reject(err);
+                        return;
+                      }
                     }
-                  }
-                );
-              })
-              .on('end', () => {
-                console.log(`Finished reading ${filePath}`);
-              });
-          }
-        );
+                  );
+                })
+                .on('end', () => {
+                  console.log(`Finished reading ${filePath}`);
+                  resolve();
+                });
+            }
+          );
+        });
       }
+    });
+
+    Promise.all(promises).then(() => {
+      console.log('期货合约数据读取完成！');
     });
   });
 }
