@@ -2,24 +2,25 @@ const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
 const mysql = require('mysql');
+const { CronJob } = require('cron');
 const { 
         CONNECTED_HOST, 
         CONNECTED_USER, 
         CONNECTED_PASSWORD, 
-        CONNECTED_DATABASE 
-    } = require('./config/index.js');
+        CONNECTED_DAILY_DATABASE 
+    } = require('../config/index.js');
 
-const { futureExchangeProducts, futureExchanges } = require("./constant/index.js")    
+const { futureExchangeProducts, futureExchanges } = require("../constant/index.js")    
 
 // MySQL 配置
 const connection = mysql.createConnection({
     host: CONNECTED_HOST,
     user: CONNECTED_USER,
     password: CONNECTED_PASSWORD,
-    database: CONNECTED_DATABASE
+    database: CONNECTED_DAILY_DATABASE
 });
 
-const directoryPath = path.resolve(__dirname, './contractData');
+const directoryPath = path.resolve(__dirname, '../contractData');
 
 // 定义递归函数，用于读取目录下的所有文件和子目录
 function readDirectory(directoryPath, parentId) {
@@ -77,23 +78,31 @@ function readDirectory(directoryPath, parentId) {
 
               const stockId = result.insertId;
 
+              let lastDate = null;
+              let rowCount = 0;
+
               fs.createReadStream(filePath)
                 .pipe(csv())
                 .on('data', row => {
-                  connection.query(
-                    'INSERT INTO stock (menu_id, date, open, high, low, close, volume, money, open_interest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    [stockId, row.date, row.open, row.high, row.low, row.close, row.volume, row.money, row.open_interest],
-                    err => {
-                      if (err) {
-                        console.error(err);
-                        reject(err);
-                        return;
+                  if(!lastDate || row.date > lastDate) {
+                    // 如果当前行的日期大于上一行的日期，说明出现了新的交易日，需要将新数据插入到 stock 表中
+                    rowCount++;
+                    connection.query(
+                      'INSERT INTO stock (menu_id, date, open, high, low, close, volume, money, open_interest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                      [stockId, row.date, row.open, row.high, row.low, row.close, row.volume, row.money, row.open_interest],
+                      err => {
+                        if (err) {
+                          console.error(err);
+                          reject(err);
+                          return;
+                        }
                       }
-                    }
-                  );
+                    );
+                  }
+                  lastDate = row.date;
                 })
                 .on('end', () => {
-                  console.log(`Finished reading ${filePath}`);
+                  console.log(`Finished reading ${filePath}. Inserted ${rowCount} rows.`);
                   resolve();
                 });
             }
@@ -141,6 +150,11 @@ connection.connect(err => {
 
           // 调用 readDirectory 函数，开始读取目录下的所有文件和子目录
           readDirectory(directoryPath, null);
+          const job = new CronJob('*/30 * * * * *', () => {
+            console.log('定时开始读取该文件夹下的数据。。。');
+            readDirectory(directoryPath, null);
+          });
+          job.start();
         }
       );
     }

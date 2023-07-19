@@ -10,8 +10,10 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.4.0",
+    "cron": "^2.3.1",
     "csv-parser": "^3.0.0",
     "mysql": "^2.18.1",
+    "node-cron": "^3.0.2",
     "node-xlsx": "^0.23.0"
   }
 }

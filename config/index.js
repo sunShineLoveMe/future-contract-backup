@@ -1,11 +1,13 @@
 const CONNECTED_HOST = "127.0.0.1"
 const CONNECTED_USER = 'root'
 const CONNECTED_PASSWORD = '123456'
-const CONNECTED_DATABASE = 'contract_data'
+const CONNECTED_DATABASE = 'contract_data' 
+const CONNECTED_DAILY_DATABASE = 'contract_daily_data'
 
 module.exports = {
     CONNECTED_HOST,
     CONNECTED_USER,
     CONNECTED_PASSWORD,
-    CONNECTED_DATABASE
+    CONNECTED_DATABASE,
+    CONNECTED_DAILY_DATABASE
 }
