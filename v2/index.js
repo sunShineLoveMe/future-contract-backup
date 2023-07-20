@@ -3,24 +3,61 @@ const path = require('path');
 const csv = require('csv-parser');
 const mysql = require('mysql');
 const { CronJob } = require('cron');
-const { 
-        CONNECTED_HOST, 
-        CONNECTED_USER, 
-        CONNECTED_PASSWORD, 
-        CONNECTED_DAILY_DATABASE 
-    } = require('../config/index.js');
+const {
+  mysqlConfigConnection
+} = require('../config/index.js');
 
-const { futureExchangeProducts, futureExchanges } = require("../constant/index.js")    
+const { futureExchangeProducts } = require("../constant/index.js")
 
-// MySQL 配置
-const connection = mysql.createConnection({
-    host: CONNECTED_HOST,
-    user: CONNECTED_USER,
-    password: CONNECTED_PASSWORD,
-    database: CONNECTED_DAILY_DATABASE
-});
-
+// mysql配置
+const connection = mysql.createConnection(mysqlConfigConnection);
+// 定义解析路径
 const directoryPath = path.resolve(__dirname, '../contractData');
+
+// 定义menu表
+function createMenuTable() {
+  connection.query(
+    'CREATE TABLE IF NOT EXISTS menu (id INT NOT NULL AUTO_INCREMENT, code VARCHAR(255), name VARCHAR(255), parent_id INT, status VARCHAR(255), create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id), FOREIGN KEY (parent_id) REFERENCES menu(id))',
+    err => {
+      if (err) {
+        console.error(err);
+        return;
+      }
+      console.log('Created menu table.');
+    }
+  );
+}
+
+// 定义stock表
+function createStockTable() {
+  connection.query(
+    'CREATE TABLE IF NOT EXISTS stock (id INT NOT NULL AUTO_INCREMENT, menu_id INT NOT NULL, date DATE NOT NULL, open FLOAT NOT NULL, high FLOAT NOT NULL, low FLOAT NOT NULL, close FLOAT NOT NULL, volume INT NOT NULL, money BIGINT NOT NULL, open_interest INT NOT NULL, PRIMARY KEY (id), FOREIGN KEY (menu_id) REFERENCES menu(id))',
+    err => {
+      if (err) {
+        console.error(err);
+        return;
+      }
+      console.log('Created stock table.');
+    }
+  );
+}
+
+// 检查表是否存在
+function checkTableExists(tableName) {
+  return new Promise((resolve, reject) => {
+    connection.query(
+      `SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = '${mysqlConfigConnection.database}' AND table_name = '${tableName}'`,
+      (err, result) => {
+        if (err) {
+          console.error(err);
+          reject(err);
+          return;
+        }
+        resolve(result[0].count === 1);
+      }
+    )
+  })
+}
 
 // 定义递归函数，用于读取目录下的所有文件和子目录
 function readDirectory(directoryPath, parentId) {
@@ -66,51 +103,56 @@ function readDirectory(directoryPath, parentId) {
         // 如果是 CSV 文件，则将其数据添加到 stock 表中
         const stockName = path.basename(filePath, '.csv');
         return new Promise((resolve, reject) => {
-          connection.query(
-            'INSERT INTO menu (code, name, parent_id, status) VALUES (?, ?, ?, ?)',
-            [stockName, stockName, parentId, 'active'],
-            (err, result) => {
-              if (err) {
-                console.error(err);
-                reject(err);
-                return;
-              }
-
-              const stockId = result.insertId;
-
-              let lastDate = null;
-              let rowCount = 0;
-
-              fs.createReadStream(filePath)
-                .pipe(csv())
-                .on('data', row => {
-                  if(!lastDate || row.date > lastDate) {
-                    // 如果当前行的日期大于上一行的日期，说明出现了新的交易日，需要将新数据插入到 stock 表中
-                    rowCount++;
-                    connection.query(
-                      'INSERT INTO stock (menu_id, date, open, high, low, close, volume, money, open_interest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                      [stockId, row.date, row.open, row.high, row.low, row.close, row.volume, row.money, row.open_interest],
-                      err => {
-                        if (err) {
-                          console.error(err);
-                          reject(err);
-                          return;
-                        }
-                      }
-                    );
-                  }
-                  lastDate = row.date;
-                })
-                .on('end', () => {
-                  console.log(`Finished reading ${filePath}. Inserted ${rowCount} rows.`);
-                  resolve();
-                });
+          checkTableExists(stockName).then(exists => {
+            if (!exists) {
+              createMenuTable();
+              createStockTable();
             }
-          );
+            connection.query(
+              'INSERT INTO menu (code, name, parent_id, status) VALUES (?, ?, ?, ?)',
+              [stockName, stockName, parentId, 'active'],
+              (err, result) => {
+                if (err) {
+                  console.error(err);
+                  reject(err);
+                  return;
+                }
+
+                const stockId = result.insertId;
+
+                let lastDate = null;
+                let rowCount = 0;
+
+                fs.createReadStream(filePath)
+                  .pipe(csv())
+                  .on('data', row => {
+                    if (!lastDate || row.date > lastDate) {
+                      // 如果当前行的日期大于上一行的日期，说明出现了新的交易日，需要将新数据插入到 stock 表中
+                      rowCount++;
+                      connection.query(
+                        'INSERT INTO stock (menu_id, date, open, high, low, close, volume, money, open_interest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [stockId, row.date, row.open, row.high, row.low, row.close, row.volume, row.money, row.open_interest],
+                        err => {
+                          if (err) {
+                            console.error(err);
+                            reject(err);
+                            return;
+                          }
+                        }
+                      );
+                    }
+                    lastDate = row.date;
+                  })
+                  .on('end', () => {
+                    console.log(`Finished reading ${filePath}. Inserted ${rowCount} rows.`);
+                    resolve();
+                  });
+              }
+            );
+          });
         });
       }
     });
-
     Promise.all(promises).then(() => {
       console.log('期货合约数据读取完成！');
     });
@@ -123,40 +165,20 @@ connection.connect(err => {
     console.error(err);
     return;
   }
-
   console.log('Connected to MySQL database.');
-
-  // 建立 menu 表
-  connection.query(
-    'CREATE TABLE IF NOT EXISTS menu (id INT NOT NULL AUTO_INCREMENT, code VARCHAR(255), name VARCHAR(255), parent_id INT, status VARCHAR(255), create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id), FOREIGN KEY (parent_id) REFERENCES menu(id))',
-    err => {
-      if (err) {
-        console.error(err);
-        return;
-      }
-
-      console.log('Created menu table.');
-
-      // 建立 stock 表
-      connection.query(
-        'CREATE TABLE IF NOT EXISTS stock (id INT NOT NULL AUTO_INCREMENT, menu_id INT NOT NULL, date DATE NOT NULL, open FLOAT NOT NULL, high FLOAT NOT NULL, low FLOAT NOT NULL, close FLOAT NOT NULL, volume INT NOT NULL, money BIGINT NOT NULL, open_interest INT NOT NULL, PRIMARY KEY (id), FOREIGN KEY (menu_id) REFERENCES menu(id))',
-        err => {
-          if (err) {
-            console.error(err);
-            return;
-          }
-
-          console.log('Created stock table.');
-
-          // 调用 readDirectory 函数，开始读取目录下的所有文件和子目录
-          readDirectory(directoryPath, null);
-          const job = new CronJob('*/30 * * * * *', () => {
-            console.log('定时开始读取该文件夹下的数据。。。');
-            readDirectory(directoryPath, null);
-          });
-          job.start();
-        }
-      );
+  checkTableExists('menu').then(exists => {
+    if (!exists) {
+      createMenuTable();
+      createStockTable();
     }
-  );
+
+    // 调用 readDirectory 函数，开始读取目录下的所有文件和子目录
+    readDirectory(directoryPath, null);
+
+    const job = new CronJob('*/30 * * * * *', () => {
+      console.log('定时开始读取该文件夹下的数据。。。');
+      readDirectory(directoryPath, null);
+    });
+    job.start();
+  });
 });
